@@ -4,4 +4,4 @@ export interface UploadedFile {
     size: number;
     lastModified: number;
     file: File;
-}
+  }

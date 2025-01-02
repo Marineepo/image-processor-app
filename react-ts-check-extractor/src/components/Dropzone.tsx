@@ -1,6 +1,7 @@
 // import React, { useCallback, useState } from 'react';
-import React, { useCallback } from 'react';
+import React from 'react';
 import { useDropzone } from 'react-dropzone';
+import { StyledDropzone } from './Dropzone.styled';
 
 interface DropzoneProps {
   onDrop: (acceptedFiles: File[]) => void;
@@ -10,10 +11,10 @@ const Dropzone: React.FC<DropzoneProps> = ({ onDrop }) => {
   const { getRootProps, getInputProps } = useDropzone({ onDrop });
 
   return (
-    <div {...getRootProps({ className: 'dropzone' })}>
+    <StyledDropzone {...getRootProps()}>
       <input {...getInputProps()} />
-      <p>Drag 'n' drop some files here, or click to select files</p>
-    </div>
+      <p>Drag or Click to select files</p>
+    </StyledDropzone>
   );
 };
 

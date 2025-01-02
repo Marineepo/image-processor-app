@@ -9,6 +9,17 @@ This project is a React TypeScript application that allows users to upload check
 - Display of extracted amounts and names.
 
 ## Project Structure
+```
+python3 -m venv venv
+source venv/bin/activate
+
+# Create requirements.txt and install dependencies
+echo -e "Flask\npytesseract\nopencv-python\nPillow" > requirements.txt
+pip install -r requirements.txt
+
+# Run the Python file
+python imageDataExtract.py
+```
 
 ```
 react-ts-check-extractor

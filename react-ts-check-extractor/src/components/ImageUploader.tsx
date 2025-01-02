@@ -3,11 +3,16 @@ import axios from 'axios';
 import Dropzone from './Dropzone';
 
 const ImageUploader: React.FC = () => {
+  const [files, setFiles] = useState<File[]>([]);
   const [totalAmount, setTotalAmount] = useState<number | null>(null);
 
   const handleDrop = (acceptedFiles: File[]) => {
+    setFiles(acceptedFiles);
+  };
+
+  const handleSubmit = () => {
     const formData = new FormData();
-    acceptedFiles.forEach(file => {
+    files.forEach(file => {
       formData.append('images', file);
     });
 
@@ -20,9 +25,18 @@ const ImageUploader: React.FC = () => {
       });
   };
 
+  const handleClear = () => {
+    setFiles([]);
+    setTotalAmount(null);
+  };
+
   return (
     <div>
       <Dropzone onDrop={handleDrop} />
+      <div>
+        <button onClick={handleSubmit} disabled={files.length === 0}>Submit</button>
+        <button onClick={handleClear} disabled={files.length === 0}>Clear</button>
+      </div>
       {totalAmount !== null && <p>Total Amount: ${totalAmount.toFixed(2)}</p>}
     </div>
   );

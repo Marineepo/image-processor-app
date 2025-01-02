@@ -1,4 +1,4 @@
+Flask
 pytesseract
-cv2
-PIL
-flask
+opencv-python
+Pillow

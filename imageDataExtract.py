@@ -30,18 +30,15 @@ def sum_amounts(image_paths):
         total += sum(amounts)
     return total
 
-# Example usage
-image_paths = ['check1.jpg', 'check2.jpg']
-print(f"Total Amount: ${sum_amounts(image_paths):.2f}")
 
 def extract_amounts(text):
     # Look for amounts in formats like "123.45" or "$123.45"
     amounts = re.findall(r'\$\d+\.\d{2}|\d+\.\d{2}', text)
     return [float(amount.strip('$')) for amount in amounts]
 
-# Example
-text = "Transaction: $100.50\nCheck Amount: 200.00"
-print(extract_amounts(text)) # Output: [100.5, 200.0]
+# # Example
+# text = "Transaction: $100.50\nCheck Amount: 200.00"
+# print(extract_amounts(text)) # Output: [100.5, 200.0]
 
 def preprocess_image(image_path):
     image = cv2.imread(image_path)
@@ -58,8 +55,8 @@ def extract_text(image_path):
         text = pytesseract.image_to_string(image)
     return text
 
-# Test the function
-print(extract_text('example_check.jpg'))
+# # Test the function
+# print(extract_text('example_check.jpg'))
 
 if __name__ == '__main__':
     app.run(debug=True)
