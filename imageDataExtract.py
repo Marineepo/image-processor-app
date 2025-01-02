@@ -3,17 +3,19 @@ import pytesseract
 import cv2
 import re
 from flask import Flask, request, jsonify
+import os
 
 app = Flask(__name__)
 
 @app.route('/upload', methods=['POST'])
-
 def upload_images():
     images = request.files.getlist('images')
     total = 0.0
+    os.makedirs('temp', exist_ok=True)
     for image in images:
-        image.save(f"temp/{image.filename}")
-        preprocessed_image = preprocess_image(f"temp/{image.filename}")
+        image_path = f"temp/{image.filename}"
+        image.save(image_path)
+        preprocessed_image = preprocess_image(image_path)
         text = pytesseract.image_to_string(preprocessed_image)
         amounts = extract_amounts(text)
         total += sum(amounts)
@@ -52,8 +54,8 @@ def preprocess_image(image_path):
 pytesseract.pytesseract.tesseract_cmd = r'/usr/local/bin/tesseract'
 
 def extract_text(image_path):
-    image = Image.open(image_path)
-    text = pytesseract.image_to_string(image)
+    with Image.open(image_path) as image:
+        text = pytesseract.image_to_string(image)
     return text
 
 # Test the function
