@@ -4,41 +4,110 @@ import cv2
 import re
 from flask import Flask, request, jsonify
 import os
+from word2number import w2n
+
 
 app = Flask(__name__)
 
-@app.route('/upload', methods=['POST'])
-def upload_images():
+@app.route('/upload_check', methods=['POST'])
+def upload_check():
+    print("Received a POST request for check")
     images = request.files.getlist('images')
+    print(f"Number of images received: {len(images)}")
     total = 0.0
+    sender_names = []
     os.makedirs('temp', exist_ok=True)
     for image in images:
         image_path = f"temp/{image.filename}"
         image.save(image_path)
+        print(f"Saved image to {image_path}")
         preprocessed_image = preprocess_image(image_path)
         text = pytesseract.image_to_string(preprocessed_image)
+        print(f"Extracted text: {text}")
         amounts = extract_amounts(text)
-        total += sum(amounts)
-    return jsonify({"total_amount": total})
+        handwritten_amounts = extract_handwritten_amounts(text)
+        print(f"Extracted typed amounts: {amounts}")
+        print(f"Extracted handwritten amounts: {handwritten_amounts}")
+        total += sum(amounts) + sum(handwritten_amounts)
+        sender_name = extract_sender_name(text)
+        if sender_name:
+            sender_names.append(sender_name)
+    return jsonify({"total_amount": total, "sender_names": sender_names})
 
-def sum_amounts(image_paths):
-    total = 0.0
-    for image_path in image_paths:
+@app.route('/upload_invoice', methods=['POST'])
+def upload_invoice():
+    print("Received a POST request for invoice")
+    images = request.files.getlist('images')
+    print(f"Number of images received: {len(images)}")
+    invoice_data = []
+    os.makedirs('temp', exist_ok=True)
+    for image in images:
+        image_path = f"temp/{image.filename}"
+        image.save(image_path)
+        print(f"Saved image to {image_path}")
         preprocessed_image = preprocess_image(image_path)
         text = pytesseract.image_to_string(preprocessed_image)
-        amounts = extract_amounts(text)
-        total += sum(amounts)
-    return total
+        print(f"Extracted text: {text}")
+        invoice_info = extract_invoice_info(text)
+        invoice_data.append(invoice_info)
+    return jsonify({"invoice_data": invoice_data})
 
+def extract_invoice_info(text):
+    # Extract relevant information from the invoice text
+    invoice_info = {}
+    invoice_info['invoice_number'] = extract_invoice_number(text)
+    invoice_info['invoice_date'] = extract_invoice_date(text)
+    invoice_info['total_amount'] = extract_invoice_total_amount(text)
+    return invoice_info
+
+def extract_invoice_number(text):
+    # Extract invoice number using a regex pattern
+    match = re.search(r'Invoice Number:\s*(\S+)', text)
+    if match:
+        return match.group(1)
+    return None
+
+def extract_invoice_date(text):
+    # Extract invoice date using a regex pattern
+    match = re.search(r'Invoice Date:\s*(\S+)', text)
+    if match:
+        return match.group(1)
+    return None
+
+def extract_invoice_total_amount(text):
+    # Extract total amount using a regex pattern
+    match = re.search(r'Total Amount:\s*\$?(\d+\.\d{2})', text)
+    if match:
+        return float(match.group(1))
+    return 0.0
 
 def extract_amounts(text):
     # Look for amounts in formats like "123.45" or "$123.45"
     amounts = re.findall(r'\$\d+\.\d{2}|\d+\.\d{2}', text)
     return [float(amount.strip('$')) for amount in amounts]
 
-# # Example
-# text = "Transaction: $100.50\nCheck Amount: 200.00"
-# print(extract_amounts(text)) # Output: [100.5, 200.0]
+def extract_handwritten_amounts(text):
+    # Look for handwritten amounts in formats like "one hundred and ten 23/100"
+    handwritten_amounts = []
+    matches = re.findall(r'([a-zA-Z\s]+)\s+(\d{1,2})/(\d{2})', text)
+    for match in matches:
+        words, numerator, denominator = match
+        try:
+            number = w2n.word_to_num(words.strip())
+            fraction = float(numerator) / float(denominator)
+            handwritten_amounts.append(number + fraction)
+        except ValueError:
+            print(f"Failed to convert words to number: {words.strip()}")
+            continue
+    return handwritten_amounts
+
+def extract_sender_name(text):
+    # Look for common patterns for sender names
+    # This is a simple heuristic and may need to be adjusted based on actual check formats
+    match = re.search(r'(?i)(pay to the order of|pay to|payable to)\s+([A-Za-z\s]+)', text)
+    if match:
+        return match.group(2).strip()
+    return None
 
 def preprocess_image(image_path):
     image = cv2.imread(image_path)
@@ -47,16 +116,12 @@ def preprocess_image(image_path):
     return thresh
 
 # Configure Tesseract OCR path
-# pytesseract.pytesseract.tesseract_cmd = r'/path/to/tesseract'
-pytesseract.pytesseract.tesseract_cmd = r'/usr/local/bin/tesseract'
+pytesseract.pytesseract.tesseract_cmd = r'/opt/homebrew/bin/tesseract'
 
 def extract_text(image_path):
     with Image.open(image_path) as image:
         text = pytesseract.image_to_string(image)
     return text
-
-# # Test the function
-# print(extract_text('example_check.jpg'))
 
 if __name__ == '__main__':
     app.run(debug=True)

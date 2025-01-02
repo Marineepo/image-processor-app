@@ -2,3 +2,4 @@ Flask
 pytesseract
 opencv-python
 Pillow
+word2number
