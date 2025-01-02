@@ -1,0 +1,4 @@
+pytesseract
+cv2
+PIL
+flask
