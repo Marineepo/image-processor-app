@@ -4,3 +4,5 @@ opencv-python
 Pillow
 word2number
 flask-cors
+scikit-image
+imutils

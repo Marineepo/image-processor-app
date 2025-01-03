@@ -1,4 +1,6 @@
+import argparse
 from PIL import Image
+import imutils
 import numpy as np
 import pytesseract
 import cv2
@@ -9,6 +11,8 @@ from word2number import w2n
 from flask_cors import CORS
 import pdf2image
 import logging
+from skimage.segmentation import clear_border
+from imutils import contours
 
 
 # CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
@@ -42,7 +46,7 @@ def upload_check():
     
     total_amount = sum(check['total_amount'] for check in checks_data)
     sender_names = [check['name_address'] for check in checks_data if check['name_address']]
-    return jsonify({"total_amount": total_amount, "sender_names": sender_names})
+    return jsonify({"total_amount": total_amount, "sender_names": sender_names, "checks_data": checks_data})
 
 def process_text(text):
     logging.info(f"Extracted text: {text}")
@@ -50,11 +54,25 @@ def process_text(text):
         "name_address": extract_name_address(text),
         "pay_to_order_of": extract_pay_to_order_of(text),
         "typed_amounts": extract_amounts(text),
-        "handwritten_amounts": extract_handwritten_amounts(text)
+        "handwritten_amounts": extract_handwritten_amounts(text),
+        "routing_number": extract_routing_number(text),
+        "account_number": extract_account_number(text)
     }
     check_data["total_amount"] = sum(check_data["typed_amounts"]) + sum(check_data["handwritten_amounts"])
     logging.info(f"Processed check data: {check_data}")
     return check_data
+
+def extract_routing_number(text):
+    match = re.search(r'Routing Number:\s*(\d+)', text)
+    if match:
+        return match.group(1)
+    return None
+
+def extract_account_number(text):
+    match = re.search(r'Account Number:\s*(\d+)', text)
+    if match:
+        return match.group(1)
+    return None
 
 def extract_name_address(text):
     lines = text.split('\n')
@@ -135,6 +153,35 @@ def extract_handwritten_amounts(text):
             continue
     return handwritten_amounts
 
+def extract_digits_and_symbols(image, charCnts, minW=5, minH=15):
+    charIter = charCnts.__iter__()
+    rois = []
+    locs = []
+    while True:
+        try:
+            c = next(charIter)
+            (cX, cY, cW, cH) = cv2.boundingRect(c)
+            roi = None
+            if cW >= minW and cH >= minH:
+                roi = image[cY:cY + cH, cX:cX + cW]
+                rois.append(roi)
+                locs.append((cX, cY, cX + cW, cY + cH))
+            else:
+                parts = [c, next(charIter), next(charIter)]
+                (sXA, sYA, sXB, sYB) = (np.inf, np.inf, -np.inf, -np.inf)
+                for p in parts:
+                    (pX, pY, pW, pH) = cv2.boundingRect(p)
+                    sXA = min(sXA, pX)
+                    sYA = min(sYA, pY)
+                    sXB = max(sXB, pX + pW)
+                    sYB = max(sYB, pY + pH)
+                roi = image[sYA:sYB, sXA:sXB]
+                rois.append(roi)
+                locs.append((sXA, sYA, sXB, sYB))
+        except StopIteration:
+            break
+    return (rois, locs)
+
 def preprocess_image(image_path):
     if isinstance(image_path, str):
         image = cv2.imread(image_path)
@@ -158,5 +205,80 @@ def extract_text(image):
 # Configure Tesseract OCR path
 pytesseract.pytesseract.tesseract_cmd = r'/opt/homebrew/bin/tesseract'
 
-if __name__ == '__main__':
-    app.run(debug=True)
+# if __name__ == '__main__':
+#     app.run(debug=True)
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) == 1:
+        app.run(debug=True)
+    else:
+        ap = argparse.ArgumentParser()
+        ap.add_argument("-i", "--image", required=True, help="path to input image")
+        ap.add_argument("-r", "--reference", required=True, help="path to reference MICR E-13B font")
+        args = vars(ap.parse_args())
+
+        charNames = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "T", "U", "A", "D"]
+        ref = cv2.imread(args["reference"])
+        ref = cv2.cvtColor(ref, cv2.COLOR_BGR2GRAY)
+        ref = imutils.resize(ref, width=400)
+        ref = cv2.threshold(ref, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+
+        refCnts = cv2.findContours(ref.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        refCnts = imutils.grab_contours(refCnts)
+        refCnts = contours.sort_contours(refCnts, method="left-to-right")[0]
+
+        refROIs = extract_digits_and_symbols(ref, refCnts, minW=10, minH=20)[0]
+        chars = {}
+        for (name, roi) in zip(charNames, refROIs):
+            roi = cv2.resize(roi, (36, 36))
+            chars[name] = roi
+
+        rectKernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 7))
+        output = []
+        image = cv2.imread(args["image"])
+        (h, w,) = image.shape[:2]
+        delta = int(h - (h * 0.2))
+        bottom = image[delta:h, 0:w]
+
+        gray = cv2.cvtColor(bottom, cv2.COLOR_BGR2GRAY)
+        blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, rectKernel)
+
+        gradX = cv2.Sobel(blackhat, ddepth=cv2.CV_32F, dx=1, dy=0, ksize=-1)
+        gradX = np.absolute(gradX)
+        (minVal, maxVal) = (np.min(gradX), np.max(gradX))
+        gradX = (255 * ((gradX - minVal) / (maxVal - minVal)))
+        gradX = gradX.astype("uint8")
+
+        gradX = cv2.morphologyEx(gradX, cv2.MORPH_CLOSE, rectKernel)
+        thresh = cv2.threshold(gradX, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+        thresh = clear_border(thresh)
+
+        groupCnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        groupCnts = imutils.grab_contours(groupCnts)
+        groupLocs = []
+        for (i, c) in enumerate(groupCnts):
+            (x, y, w, h) = cv2.boundingRect(c)
+            if w > 50 and h > 15:
+                groupLocs.append((x, y, w, h))
+        groupLocs = sorted(groupLocs, key=lambda x: x[0])
+
+        for (gX, gY, gW, gH) in groupLocs:
+            groupOutput = []
+            groupROI = gray[gY:gY + gH, gX:gX + gW]
+            groupThresh = cv2.threshold(groupROI, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+
+            charCnts = cv2.findContours(groupThresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            charCnts = imutils.grab_contours(charCnts)
+            charCnts = contours.sort_contours(charCnts, method="left-to-right")[0]
+
+            (rois, locs) = extract_digits_and_symbols(groupThresh, charCnts)
+            for roi in rois:
+                scores = []
+                for charName in charNames:
+                    result = cv2.matchTemplate(roi, chars[charName], cv2.TM_CCOEFF)
+                    (_, score, _, _) = cv2.minMaxLoc(result)
+                    scores.append(score)
+                groupOutput.append(charNames[np.argmax(scores)])
+            output.append("".join(groupOutput))
+
+        print("Check OCR: {}".format(" ".join(output)))

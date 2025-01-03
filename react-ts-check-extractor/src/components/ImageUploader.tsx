@@ -2,10 +2,19 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import Dropzone from './Dropzone';
 
+interface CheckData {
+  name_address: string;
+  pay_to_order_of: string | null;
+  typed_amounts: number[];
+  handwritten_amounts: number[];
+  total_amount: number;
+  routing_number: string | null;
+  account_number: string | null;
+}
+
 const ImageUploader: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
-  const [totalAmount, setTotalAmount] = useState<number | null>(null);
-  const [senderNames, setSenderNames] = useState<string[]>([]);
+  const [checkData, setCheckData] = useState<CheckData[] | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
 
   const handleDrop = (acceptedFiles: File[]) => {
@@ -25,9 +34,7 @@ const ImageUploader: React.FC = () => {
 
     axios.post('http://127.0.0.1:5000/upload_check', formData)
       .then(response => {
-        const { total_amount, sender_names } = response.data;
-        setTotalAmount(total_amount !== undefined ? total_amount : 0);
-        setSenderNames(sender_names !== undefined ? sender_names : []);
+        setCheckData(response.data.checks_data);
       })
       .catch(error => {
         console.error('Error uploading images:', error);
@@ -36,8 +43,7 @@ const ImageUploader: React.FC = () => {
 
   const handleClear = () => {
     setFiles([]);
-    setTotalAmount(null);
-    setSenderNames([]);
+    setCheckData(null);
     setPreview(null);
   };
 
@@ -48,53 +54,19 @@ const ImageUploader: React.FC = () => {
         <button onClick={handleSubmit} disabled={files.length === 0}>Submit</button>
         <button onClick={handleClear} disabled={files.length === 0}>Clear</button>
       </div>
-      {totalAmount !== null && (
-        <div>
-          <p>Total Amount: ${totalAmount.toFixed(2)}</p>
-          <div>
-            <p>Sender Names:</p>
-            {senderNames.map((name, index) => (
-              <p key={index}>{name}</p>
-            ))}
-          </div>
+      {checkData && checkData.map((check, index) => (
+        <div key={index}>
+          <p><strong>Name & Address:</strong> {check.name_address || 'N/A'}</p>
+          <p><strong>Pay to the Order of:</strong> {check.pay_to_order_of || 'N/A'}</p>
+          <p><strong>Typed Amounts:</strong> {check.typed_amounts?.length > 0 ? check.typed_amounts.join(', ') : 'N/A'}</p>
+          <p><strong>Handwritten Amounts:</strong> {check.handwritten_amounts?.length > 0 ? check.handwritten_amounts.join(', ') : 'N/A'}</p>
+          <p><strong>Total Amount:</strong> ${check.total_amount?.toFixed(2) || 'N/A'}</p>
+          <p><strong>Routing Number:</strong> {check.routing_number || 'N/A'}</p>
+          <p><strong>Account Number:</strong> {check.account_number || 'N/A'}</p>
         </div>
-      )}
+      ))}
     </div>
   );
 };
 
 export default ImageUploader;
-// IF ABOVE ISN"T WORKING UNCOMMENT BELOW FOR TESTING -- NOTE
-// const ImageUploader: React.FC = () => {
-//     const [files, setFiles] = useState<File[]>([]);
-
-//     const handleDrop = (acceptedFiles: File[]) => {
-//         setFiles(acceptedFiles);
-//     };
-
-//     const handleSubmit = async () => {
-//         const formData = new FormData();
-//         files.forEach(file => {
-//             formData.append('images', file);
-//         });
-
-//         const response = await fetch('/upload', {
-//             method: 'POST',
-//             body: formData,
-//         });
-
-//         const data = await response.json();
-//         console.log('Total Amount:', data.total_amount);
-//     };
-
-//     return (
-//         <div>
-//             <Dropzone onDrop={handleDrop} />
-//             <button onClick={handleSubmit} disabled={files.length === 0}>
-//                 Submit
-//             </button>
-//         </div>
-//     );
-// };
-
-// export default ImageUploader;
