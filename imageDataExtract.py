@@ -8,64 +8,63 @@ import os
 from word2number import w2n
 from flask_cors import CORS
 import pdf2image
-
+import logging
 
 
 # CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
+logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
 CORS(app)
 
 @app.route('/upload_check', methods=['POST'])
 def upload_check():
-    print("Received a POST request for check")
+    logging.info("Received a POST request for check")
     images = request.files.getlist('images')
-    print(f"Number of images received: {len(images)}")
-    total = 0.0
-    sender_names = []
+    logging.info(f"Number of images received: {len(images)}")
+    checks_data = []
     os.makedirs('temp', exist_ok=True)
     for image in images:
         image_path = f"temp/{image.filename}"
         image.save(image_path)
-        print(f"Saved image to {image_path}")
+        logging.info(f"Saved image to {image_path}")
         if image.filename.lower().endswith('.pdf'):
             pages = pdf2image.convert_from_path(image_path)
             for page in pages:
                 preprocessed_image = preprocess_image(page)
                 text = extract_text(preprocessed_image)
-                process_text(text, sender_names, total)
+                check_data = process_text(text)
+                checks_data.append(check_data)
         else:
             preprocessed_image = preprocess_image(image_path)
             text = extract_text(preprocessed_image)
-            process_text(text, sender_names, total)
-    return jsonify({"total_amount": total, "sender_names": sender_names})
+            check_data = process_text(text)
+            checks_data.append(check_data)
+    
+    total_amount = sum(check['total_amount'] for check in checks_data)
+    sender_names = [check['name_address'] for check in checks_data if check['name_address']]
+    return jsonify({"total_amount": total_amount, "sender_names": sender_names})
 
-def process_text(text, sender_names, total):
-    print(f"Extracted text: {text}")
-    name_address = extract_name_address(text)
-    pay_to_order_of = extract_pay_to_order_of(text)
-    amounts = extract_amounts(text)
-    handwritten_amounts = extract_handwritten_amounts(text)
-    print(f"Extracted name and address: {name_address}")
-    print(f"Extracted 'PAY TO THE ORDER OF': {pay_to_order_of}")
-    print(f"Extracted typed amounts: {amounts}")
-    print(f"Extracted handwritten amounts: {handwritten_amounts}")
-    total += sum(amounts) + sum(handwritten_amounts)
-    if name_address:
-        sender_names.append(name_address)
-    if pay_to_order_of:
-        sender_names.append(pay_to_order_of)
+def process_text(text):
+    logging.info(f"Extracted text: {text}")
+    check_data = {
+        "name_address": extract_name_address(text),
+        "pay_to_order_of": extract_pay_to_order_of(text),
+        "typed_amounts": extract_amounts(text),
+        "handwritten_amounts": extract_handwritten_amounts(text)
+    }
+    check_data["total_amount"] = sum(check_data["typed_amounts"]) + sum(check_data["handwritten_amounts"])
+    logging.info(f"Processed check data: {check_data}")
+    return check_data
 
 def extract_name_address(text):
-    # Extract name and address from the top left of the check
     lines = text.split('\n')
     name_address = []
-    for line in lines[:5]:  # Assuming the name and address are within the first 5 lines
+    for line in lines[:5]:
         if line.strip():
             name_address.append(line.strip())
     return ' '.join(name_address)
 
 def extract_pay_to_order_of(text):
-    # Extract "PAY TO THE ORDER OF" and the following name
     match = re.search(r'PAY TO THE ORDER OF\s+([A-Za-z\s]+)', text, re.IGNORECASE)
     if match:
         return match.group(1).strip()
@@ -119,12 +118,10 @@ def extract_invoice_total_amount(text):
     return 0.0
 
 def extract_amounts(text):
-    # Look for amounts in formats like "123.45" or "$123.45"
     amounts = re.findall(r'\$\d+\.\d{2}|\d+\.\d{2}', text)
     return [float(amount.strip('$')) for amount in amounts]
 
 def extract_handwritten_amounts(text):
-    # Look for handwritten amounts in formats like "one hundred and ten 23/100"
     handwritten_amounts = []
     matches = re.findall(r'([a-zA-Z\s]+)\s+(\d{1,2})/(\d{2})', text)
     for match in matches:
@@ -134,17 +131,9 @@ def extract_handwritten_amounts(text):
             fraction = float(numerator) / float(denominator)
             handwritten_amounts.append(number + fraction)
         except ValueError:
-            print(f"Failed to convert words to number: {words.strip()}")
+            logging.error(f"Failed to convert words to number: {words.strip()}")
             continue
     return handwritten_amounts
-
-def extract_sender_name(text):
-    # Look for common patterns for sender names
-    # This is a simple heuristic and may need to be adjusted based on actual check formats
-    match = re.search(r'(?i)(pay to the order of|pay to|payable to)\s+([A-Za-z\s]+)', text)
-    if match:
-        return match.group(2).strip()
-    return None
 
 def preprocess_image(image_path):
     if isinstance(image_path, str):
@@ -152,16 +141,9 @@ def preprocess_image(image_path):
     else:
         image = cv2.cvtColor(np.array(image_path), cv2.COLOR_RGB2BGR)
     
-    # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    
-    # Apply contrast adjustment
     gray = cv2.equalizeHist(gray)
-    
-    # Apply adaptive thresholding
     thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-    
-    # Additional preprocessing steps
     kernel = np.ones((1, 1), np.uint8)
     img_dilated = cv2.dilate(thresh, kernel, iterations=1)
     img_eroded = cv2.erode(img_dilated, kernel, iterations=1)
@@ -169,7 +151,6 @@ def preprocess_image(image_path):
     return img_eroded
 
 def extract_text(image):
-    # Use Tesseract OCR with custom configuration
     custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz$.,:/-'
     tesseract_text = pytesseract.image_to_string(image, config=custom_config)
     return tesseract_text

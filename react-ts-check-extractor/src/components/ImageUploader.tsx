@@ -25,8 +25,9 @@ const ImageUploader: React.FC = () => {
 
     axios.post('http://127.0.0.1:5000/upload_check', formData)
       .then(response => {
-        setTotalAmount(response.data.total_amount);
-        setSenderNames(response.data.sender_names);
+        const { total_amount, sender_names } = response.data;
+        setTotalAmount(total_amount !== undefined ? total_amount : 0);
+        setSenderNames(sender_names !== undefined ? sender_names : []);
       })
       .catch(error => {
         console.error('Error uploading images:', error);
