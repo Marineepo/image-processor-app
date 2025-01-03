@@ -1,4 +1,5 @@
 from PIL import Image
+import numpy as np
 import pytesseract
 import cv2
 import re
@@ -6,6 +7,7 @@ from flask import Flask, request, jsonify
 import os
 from word2number import w2n
 from flask_cors import CORS
+import pdf2image
 
 
 
@@ -25,23 +27,33 @@ def upload_check():
         image_path = f"temp/{image.filename}"
         image.save(image_path)
         print(f"Saved image to {image_path}")
-        preprocessed_image = preprocess_image(image_path)
-        text = extract_text(preprocessed_image)
-        print(f"Extracted text: {text}")
-        name_address = extract_name_address(text)
-        pay_to_order_of = extract_pay_to_order_of(text)
-        amounts = extract_amounts(text)
-        handwritten_amounts = extract_handwritten_amounts(text)
-        print(f"Extracted name and address: {name_address}")
-        print(f"Extracted 'PAY TO THE ORDER OF': {pay_to_order_of}")
-        print(f"Extracted typed amounts: {amounts}")
-        print(f"Extracted handwritten amounts: {handwritten_amounts}")
-        total += sum(amounts) + sum(handwritten_amounts)
-        if name_address:
-            sender_names.append(name_address)
-        if pay_to_order_of:
-            sender_names.append(pay_to_order_of)
+        if image.filename.lower().endswith('.pdf'):
+            pages = pdf2image.convert_from_path(image_path)
+            for page in pages:
+                preprocessed_image = preprocess_image(page)
+                text = extract_text(preprocessed_image)
+                process_text(text, sender_names, total)
+        else:
+            preprocessed_image = preprocess_image(image_path)
+            text = extract_text(preprocessed_image)
+            process_text(text, sender_names, total)
     return jsonify({"total_amount": total, "sender_names": sender_names})
+
+def process_text(text, sender_names, total):
+    print(f"Extracted text: {text}")
+    name_address = extract_name_address(text)
+    pay_to_order_of = extract_pay_to_order_of(text)
+    amounts = extract_amounts(text)
+    handwritten_amounts = extract_handwritten_amounts(text)
+    print(f"Extracted name and address: {name_address}")
+    print(f"Extracted 'PAY TO THE ORDER OF': {pay_to_order_of}")
+    print(f"Extracted typed amounts: {amounts}")
+    print(f"Extracted handwritten amounts: {handwritten_amounts}")
+    total += sum(amounts) + sum(handwritten_amounts)
+    if name_address:
+        sender_names.append(name_address)
+    if pay_to_order_of:
+        sender_names.append(pay_to_order_of)
 
 def extract_name_address(text):
     # Extract name and address from the top left of the check
@@ -135,15 +147,30 @@ def extract_sender_name(text):
     return None
 
 def preprocess_image(image_path):
-    image = cv2.imread(image_path)
+    if isinstance(image_path, str):
+        image = cv2.imread(image_path)
+    else:
+        image = cv2.cvtColor(np.array(image_path), cv2.COLOR_RGB2BGR)
+    
+    # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
-    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return thresh
+    
+    # Apply contrast adjustment
+    gray = cv2.equalizeHist(gray)
+    
+    # Apply adaptive thresholding
+    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+    
+    # Additional preprocessing steps
+    kernel = np.ones((1, 1), np.uint8)
+    img_dilated = cv2.dilate(thresh, kernel, iterations=1)
+    img_eroded = cv2.erode(img_dilated, kernel, iterations=1)
+
+    return img_eroded
 
 def extract_text(image):
     # Use Tesseract OCR with custom configuration
-    custom_config = r'--oem 3 --psm 6'
+    custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz$.,:/-'
     tesseract_text = pytesseract.image_to_string(image, config=custom_config)
     return tesseract_text
 

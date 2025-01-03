@@ -50,7 +50,12 @@ const ImageUploader: React.FC = () => {
       {totalAmount !== null && (
         <div>
           <p>Total Amount: ${totalAmount.toFixed(2)}</p>
-          <p>Sender Names: {senderNames.join(', ')}</p>
+          <div>
+            <p>Sender Names:</p>
+            {senderNames.map((name, index) => (
+              <p key={index}>{name}</p>
+            ))}
+          </div>
         </div>
       )}
     </div>
