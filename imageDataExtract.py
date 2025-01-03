@@ -63,13 +63,13 @@ def process_text(text):
     return check_data
 
 def extract_routing_number(text):
-    match = re.search(r'Routing Number:\s*(\d+)', text)
+    match = re.search(r'Routing Number:\s*(\d+)', text, re.IGNORECASE)
     if match:
         return match.group(1)
     return None
 
 def extract_account_number(text):
-    match = re.search(r'Account Number:\s*(\d+)', text)
+    match = re.search(r'Account Number:\s*(\d+)', text, re.IGNORECASE)
     if match:
         return match.group(1)
     return None
@@ -77,10 +77,16 @@ def extract_account_number(text):
 def extract_name_address(text):
     lines = text.split('\n')
     name_address = []
-    for line in lines[:5]:
-        if line.strip():
+    for line in lines:
+        if re.search(r'\d{1,3}\s+\w+', line):  # Look for lines with addresses
             name_address.append(line.strip())
-    return ' '.join(name_address)
+        elif re.search(r'[A-Za-z]+', line):  # Look for lines with names
+            name_address.append(line.strip())
+    # Join the lines with a space and clean up any extra spaces
+    cleaned_name_address = ' '.join(name_address).replace('  ', ' ')
+    # Further clean up the text by removing unwanted characters
+    cleaned_name_address = re.sub(r'[^A-Za-z0-9\s,.-]', '', cleaned_name_address)
+    return cleaned_name_address
 
 def extract_pay_to_order_of(text):
     match = re.search(r'PAY TO THE ORDER OF\s+([A-Za-z\s]+)', text, re.IGNORECASE)
@@ -190,16 +196,20 @@ def preprocess_image(image_path):
     
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.equalizeHist(gray)
-    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    # Use a different thresholding method
+    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     kernel = np.ones((1, 1), np.uint8)
     img_dilated = cv2.dilate(thresh, kernel, iterations=1)
     img_eroded = cv2.erode(img_dilated, kernel, iterations=1)
-
+    # Additional morphological operations
+    img_eroded = cv2.morphologyEx(img_eroded, cv2.MORPH_CLOSE, kernel)
     return img_eroded
 
 def extract_text(image):
     custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz$.,:/-'
     tesseract_text = pytesseract.image_to_string(image, config=custom_config)
+    logging.info(f"Extracted OCR text: {tesseract_text}")
     return tesseract_text
 
 # Configure Tesseract OCR path
