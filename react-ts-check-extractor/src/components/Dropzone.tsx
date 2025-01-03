@@ -5,15 +5,20 @@ import { StyledDropzone } from './Dropzone.styled';
 
 interface DropzoneProps {
   onDrop: (acceptedFiles: File[]) => void;
+  preview: string | null;
 }
 
-const Dropzone: React.FC<DropzoneProps> = ({ onDrop }) => {
+const Dropzone: React.FC<DropzoneProps> = ({ onDrop, preview }) => {
   const { getRootProps, getInputProps } = useDropzone({ onDrop });
 
   return (
     <StyledDropzone {...getRootProps()}>
       <input {...getInputProps()} />
-      <p>Drag or Click to select files</p>
+      {preview ? (
+        <img src={preview} alt="Preview" style={{ maxWidth: '100%', maxHeight: '200px' }} />
+      ) : (
+        <p>Drag or Click to select files</p>
+      )}
     </StyledDropzone>
   );
 };

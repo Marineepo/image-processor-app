@@ -5,9 +5,16 @@ import Dropzone from './Dropzone';
 const ImageUploader: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [totalAmount, setTotalAmount] = useState<number | null>(null);
+  const [senderNames, setSenderNames] = useState<string[]>([]);
+  const [preview, setPreview] = useState<string | null>(null);
 
   const handleDrop = (acceptedFiles: File[]) => {
     setFiles(acceptedFiles);
+    if (acceptedFiles.length > 0) {
+      setPreview(URL.createObjectURL(acceptedFiles[0]));
+    } else {
+      setPreview(null);
+    }
   };
 
   const handleSubmit = () => {
@@ -16,9 +23,10 @@ const ImageUploader: React.FC = () => {
       formData.append('images', file);
     });
 
-    axios.post('http://localhost:5000/upload', formData)
+    axios.post('http://127.0.0.1:5000/upload_check', formData)
       .then(response => {
         setTotalAmount(response.data.total_amount);
+        setSenderNames(response.data.sender_names);
       })
       .catch(error => {
         console.error('Error uploading images:', error);
@@ -28,16 +36,23 @@ const ImageUploader: React.FC = () => {
   const handleClear = () => {
     setFiles([]);
     setTotalAmount(null);
+    setSenderNames([]);
+    setPreview(null);
   };
 
   return (
     <div>
-      <Dropzone onDrop={handleDrop} />
+      <Dropzone onDrop={handleDrop} preview={preview} />
       <div>
         <button onClick={handleSubmit} disabled={files.length === 0}>Submit</button>
         <button onClick={handleClear} disabled={files.length === 0}>Clear</button>
       </div>
-      {totalAmount !== null && <p>Total Amount: ${totalAmount.toFixed(2)}</p>}
+      {totalAmount !== null && (
+        <div>
+          <p>Total Amount: ${totalAmount.toFixed(2)}</p>
+          <p>Sender Names: {senderNames.join(', ')}</p>
+        </div>
+      )}
     </div>
   );
 };

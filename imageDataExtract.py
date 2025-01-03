@@ -5,9 +5,13 @@ import re
 from flask import Flask, request, jsonify
 import os
 from word2number import w2n
+from flask_cors import CORS
 
 
+
+# CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
 app = Flask(__name__)
+CORS(app)
 
 @app.route('/upload_check', methods=['POST'])
 def upload_check():
@@ -22,17 +26,38 @@ def upload_check():
         image.save(image_path)
         print(f"Saved image to {image_path}")
         preprocessed_image = preprocess_image(image_path)
-        text = pytesseract.image_to_string(preprocessed_image)
+        text = extract_text(preprocessed_image)
         print(f"Extracted text: {text}")
+        name_address = extract_name_address(text)
+        pay_to_order_of = extract_pay_to_order_of(text)
         amounts = extract_amounts(text)
         handwritten_amounts = extract_handwritten_amounts(text)
+        print(f"Extracted name and address: {name_address}")
+        print(f"Extracted 'PAY TO THE ORDER OF': {pay_to_order_of}")
         print(f"Extracted typed amounts: {amounts}")
         print(f"Extracted handwritten amounts: {handwritten_amounts}")
         total += sum(amounts) + sum(handwritten_amounts)
-        sender_name = extract_sender_name(text)
-        if sender_name:
-            sender_names.append(sender_name)
+        if name_address:
+            sender_names.append(name_address)
+        if pay_to_order_of:
+            sender_names.append(pay_to_order_of)
     return jsonify({"total_amount": total, "sender_names": sender_names})
+
+def extract_name_address(text):
+    # Extract name and address from the top left of the check
+    lines = text.split('\n')
+    name_address = []
+    for line in lines[:5]:  # Assuming the name and address are within the first 5 lines
+        if line.strip():
+            name_address.append(line.strip())
+    return ' '.join(name_address)
+
+def extract_pay_to_order_of(text):
+    # Extract "PAY TO THE ORDER OF" and the following name
+    match = re.search(r'PAY TO THE ORDER OF\s+([A-Za-z\s]+)', text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
 
 @app.route('/upload_invoice', methods=['POST'])
 def upload_invoice():
@@ -46,7 +71,7 @@ def upload_invoice():
         image.save(image_path)
         print(f"Saved image to {image_path}")
         preprocessed_image = preprocess_image(image_path)
-        text = pytesseract.image_to_string(preprocessed_image)
+        text = extract_text(preprocessed_image)
         print(f"Extracted text: {text}")
         invoice_info = extract_invoice_info(text)
         invoice_data.append(invoice_info)
@@ -112,16 +137,18 @@ def extract_sender_name(text):
 def preprocess_image(image_path):
     image = cv2.imread(image_path)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return thresh
+
+def extract_text(image):
+    # Use Tesseract OCR with custom configuration
+    custom_config = r'--oem 3 --psm 6'
+    tesseract_text = pytesseract.image_to_string(image, config=custom_config)
+    return tesseract_text
 
 # Configure Tesseract OCR path
 pytesseract.pytesseract.tesseract_cmd = r'/opt/homebrew/bin/tesseract'
-
-def extract_text(image_path):
-    with Image.open(image_path) as image:
-        text = pytesseract.image_to_string(image)
-    return text
 
 if __name__ == '__main__':
     app.run(debug=True)
